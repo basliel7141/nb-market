@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -28,9 +28,8 @@ jobs:
           cache: true
 
       - name: Create Flutter project structure
-        run: |
-          flutter create --project-name nb_market --platforms=android .
-      
+        run: flutter create --project-name nb_market --platforms=android .
+
       - name: Get dependencies
         run: flutter pub get
 
@@ -42,3 +41,4 @@ jobs:
         with:
           name: NB-MARKET-APK
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
