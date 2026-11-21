@@ -1,9 +1,23 @@
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+const supabaseUrl = 'https://fvpxdjbevwuiqywegapf.supabase.co';
+const supabaseKey =
+    'sb_publishable_92a1et2DQsEz__A-D8MR0g_I3NUg-f1';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseKey,
+  );
+
   runApp(const NBMarketApp());
 }
+
+final supabase = Supabase.instance.client;
 
 class NBMarketApp extends StatelessWidget {
   const NBMarketApp({super.key});
@@ -11,18 +25,38 @@ class NBMarketApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'NB MARKET',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
+        useMaterial3: true,
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF111111),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFFF7900),
           brightness: Brightness.dark,
         ),
-        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFF101010),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF101010),
+        ),
       ),
-      home: const LoginPage(),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<AuthState>(
+      stream: supabase.auth.onAuthStateChange,
+      builder: (context, snapshot) {
+        if (supabase.auth.currentSession != null) {
+          return const HomePage();
+        }
+        return const LoginPage();
+      },
     );
   }
 }
@@ -35,21 +69,155 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
+
   bool isRegister = false;
   bool hidePassword = true;
-
-  final nameController = TextEditingController();
-  final phoneController = TextEditingController();
-  final passwordController = TextEditingController();
-  final confirmPasswordController = TextEditingController();
+  bool loading = false;
 
   @override
   void dispose() {
-    nameController.dispose();
-    phoneController.dispose();
-    passwordController.dispose();
-    confirmPasswordController.dispose();
+    _nameController.dispose();
+    _phoneController.dispose();
+    _passwordController.dispose();
+    _confirmController.dispose();
     super.dispose();
+  }
+
+  void showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<Map<String, dynamic>> callAuth(
+    Map<String, dynamic> body,
+  ) async {
+    final response = await supabase.functions.invoke(
+      'nb-market-auth',
+      body: body,
+    );
+
+    final data = response.data;
+
+    if (data is Map) {
+      final result = Map<String, dynamic>.from(data);
+
+      if (response.status >= 400 || result['error'] != null) {
+        throw Exception(
+          result['error'] ?? 'Something went wrong',
+        );
+      }
+
+      return result;
+    }
+
+    throw Exception('Invalid server response');
+  }
+
+  Future<void> submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => loading = true);
+
+    try {
+      final phone = _phoneController.text.trim();
+      final password = _passwordController.text;
+
+      if (isRegister) {
+        await callAuth({
+          'action': 'register',
+          'full_name': _nameController.text.trim(),
+          'phone': phone,
+          'password': password,
+        });
+      }
+
+      final result = await callAuth({
+        'action': 'login',
+        'phone': phone,
+        'password': password,
+      });
+
+      final refreshToken = result['refresh_token'];
+
+      if (refreshToken == null) {
+        throw Exception('Login token was not received');
+      }
+
+      await supabase.auth.setSession(
+        refreshToken.toString(),
+      );
+
+      if (!mounted) return;
+
+      showMessage(
+        isRegister
+            ? 'Account created successfully!'
+            : 'Login successful!',
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      String message = error.toString()
+          .replaceFirst('Exception: ', '');
+
+      if (message.contains('FunctionException') ||
+          message.contains('404')) {
+        message =
+            'Authentication service not available. Please check the server settings.';
+      }
+
+      showMessage(message);
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
+    }
+  }
+
+  Widget inputField({
+    required String label,
+    required TextEditingController controller,
+    bool password = false,
+    String? Function(String?)? validator,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 15),
+      child: TextFormField(
+        controller: controller,
+        obscureText: password && hidePassword,
+        keyboardType: label == 'Phone Number'
+            ? TextInputType.phone
+            : TextInputType.text,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          suffixIcon: password
+              ? IconButton(
+                  icon: Icon(
+                    hidePassword
+                        ? Icons.visibility_off
+                        : Icons.visibility,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      hidePassword = !hidePassword;
+                    });
+                  },
+                )
+              : null,
+        ),
+      ),
+    );
   }
 
   @override
@@ -59,201 +227,214 @@ class _LoginPageState extends State<LoginPage> {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 25),
-                Container(
-                  height: 90,
-                  width: 90,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF7900),
-                    borderRadius: BorderRadius.circular(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.shopping_cart,
+                    size: 75,
+                    color: Color(0xFFFF7900),
                   ),
-                  child: const Center(
-                    child: Text(
-                      'NB',
-                      style: TextStyle(
-                        fontSize: 42,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
+                  const SizedBox(height: 12),
+                  const Text(
+                    'NB MARKET',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Buy • Sell • Shop Easy',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.orange),
+                  ),
+                  const SizedBox(height: 35),
+                  Text(
+                    isRegister ? 'Create Account' : 'Welcome Back',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+
+                  if (isRegister)
+                    inputField(
+                      label: 'Full Name',
+                      controller: _nameController,
+                      validator: (value) {
+                        if (value == null ||
+                            value.trim().length < 2) {
+                          return 'Enter your full name';
+                        }
+                        return null;
+                      },
+                    ),
+
+                  inputField(
+                    label: 'Phone Number',
+                    controller: _phoneController,
+                    validator: (value) {
+                      final phone =
+                          (value ?? '').replaceAll(
+                        RegExp(r'\s+'),
+                        '',
+                      );
+
+                      if (!RegExp(r'^\+?[0-9]{9,15}$')
+                          .hasMatch(phone)) {
+                        return 'Enter a valid phone number';
+                      }
+                      return null;
+                    },
+                  ),
+
+                  inputField(
+                    label: 'Password',
+                    controller: _passwordController,
+                    password: true,
+                    validator: (value) {
+                      if (value == null || value.length < 8) {
+                        return 'Password must be at least 8 characters';
+                      }
+                      return null;
+                    },
+                  ),
+
+                  if (isRegister)
+                    inputField(
+                      label: 'Confirm Password',
+                      controller: _confirmController,
+                      password: true,
+                      validator: (value) {
+                        if (value != _passwordController.text) {
+                          return 'Passwords do not match';
+                        }
+                        return null;
+                      },
+                    ),
+
+                  if (!isRegister)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          showMessage(
+                            'Password reset will be added next.',
+                          );
+                        },
+                        child: const Text('Forgot Password?'),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'NB MARKET',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Buy • Sell • Shop Easy',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFFFF7900),
-                    fontSize: 15,
-                  ),
-                ),
-                const SizedBox(height: 40),
-                Text(
-                  isRegister ? 'Create Account' : 'Welcome Back',
-                  style: const TextStyle(
-                    fontSize: 25,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isRegister
-                      ? 'Register to start using NB MARKET'
-                      : 'Login to your NB MARKET account',
-                  style: const TextStyle(color: Colors.white60),
-                ),
-                const SizedBox(height: 25),
 
-                if (isRegister)
-                  _field(
-                    controller: nameController,
-                    label: 'Full Name',
-                    icon: Icons.person_outline,
-                  ),
+                  const SizedBox(height: 12),
 
-                const SizedBox(height: 15),
-                _field(
-                  controller: phoneController,
-                  label: 'Phone Number',
-                  icon: Icons.phone_outlined,
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 15),
-                _field(
-                  controller: passwordController,
-                  label: 'Password',
-                  icon: Icons.lock_outline,
-                  obscure: hidePassword,
-                  suffix: IconButton(
-                    onPressed: () {
-                      setState(() {
-                        hidePassword = !hidePassword;
-                      });
-                    },
-                    icon: Icon(
-                      hidePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: loading ? null : submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            const Color(0xFFFF7900),
+                        foregroundColor: Colors.black,
+                      ),
+                      child: loading
+                          ? const CircularProgressIndicator(
+                              color: Colors.black,
+                            )
+                          : Text(
+                              isRegister
+                                  ? 'CREATE ACCOUNT'
+                                  : 'LOGIN',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                   ),
-                ),
 
-                if (isRegister) ...[
                   const SizedBox(height: 15),
-                  _field(
-                    controller: confirmPasswordController,
-                    label: 'Confirm Password',
-                    icon: Icons.lock_outline,
-                    obscure: true,
+
+                  TextButton(
+                    onPressed: loading
+                        ? null
+                        : () {
+                            setState(() {
+                              isRegister = !isRegister;
+                            });
+                          },
+                    child: Text(
+                      isRegister
+                          ? 'Already have an account? Login'
+                          : "Don't have an account? Register",
+                    ),
                   ),
                 ],
-
-                const SizedBox(height: 25),
-                SizedBox(
-                  height: 54,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF7900),
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Account connection will be added next.',
-                          ),
-                        ),
-                      );
-                    },
-                    child: Text(
-                      isRegister ? 'CREATE ACCOUNT' : 'LOGIN',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-                if (!isRegister)
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      'Forgot Password?',
-                      style: TextStyle(color: Color(0xFFFF7900)),
-                    ),
-                  ),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      isRegister
-                          ? 'Already have an account?'
-                          : "Don't have an account?",
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        setState(() {
-                          isRegister = !isRegister;
-                        });
-                      },
-                      child: Text(
-                        isRegister ? 'Login' : 'Register',
-                        style: const TextStyle(
-                          color: Color(0xFFFF7900),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _field({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    TextInputType keyboardType = TextInputType.text,
-    bool obscure = false,
-    Widget? suffix,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboardType,
-      obscureText: obscure,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: const Color(0xFFFF7900)),
-        suffixIcon: suffix,
-        filled: true,
-        fillColor: const Color(0xFF202020),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = supabase.auth.currentUser;
+    final name =
+        user?.userMetadata?['full_name'] ?? 'User';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'NB MARKET',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Logout',
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              await supabase.auth.signOut();
+            },
+          ),
+        ],
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.shopping_bag,
+              size: 75,
+              color: Color(0xFFFF7900),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Welcome, $name!',
+              style: const TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text('NB MARKET'),
+            const SizedBox(height: 8),
+            const Text(
+              'Your account is connected.',
+              style: TextStyle(color: Colors.green),
+            ),
+          ],
         ),
       ),
     );
