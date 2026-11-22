@@ -1,7 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'customer_features.dart';
 const supabaseUrl =
     'https://fvpxdjbevwuiqywegapf.supabase.co';
 
@@ -160,7 +160,7 @@ class _RoleGateState extends State<RoleGate> {
           return const AdminDashboard();
         }
 
-        return const CustomerDashboard();
+        return const CustomerFeaturesPage();
       },
     );
   }
