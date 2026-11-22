@@ -2,9 +2,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-const supabaseUrl = 'https://fvpxdjbevwuiqywegapf.supabase.co';
+const supabaseUrl =
+    'https://fvpxdjbevwuiqywegapf.supabase.co';
+
 const supabaseKey =
     'sb_publishable_92a1et2DQsEz__A-D8MR0g_I3NUg-f1';
+
+// Supabase Edge Function endpoint
+const authFunctionName = 'hyper-processor';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +39,8 @@ class NBMarketApp extends StatelessWidget {
           seedColor: const Color(0xFFFF7900),
           brightness: Brightness.dark,
         ),
-        scaffoldBackgroundColor: const Color(0xFF101010),
+        scaffoldBackgroundColor:
+            const Color(0xFF101010),
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF101010),
         ),
@@ -55,6 +61,7 @@ class AuthGate extends StatelessWidget {
         if (supabase.auth.currentSession != null) {
           return const HomePage();
         }
+
         return const LoginPage();
       },
     );
@@ -70,6 +77,7 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
+
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -90,8 +98,12 @@ class _LoginPageState extends State<LoginPage> {
 
   void showMessage(String message) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 4),
+      ),
     );
   }
 
@@ -99,7 +111,7 @@ class _LoginPageState extends State<LoginPage> {
     Map<String, dynamic> body,
   ) async {
     final response = await supabase.functions.invoke(
-      'nb-market-auth',
+      authFunctionName,
       body: body,
     );
 
@@ -108,7 +120,8 @@ class _LoginPageState extends State<LoginPage> {
     if (data is Map) {
       final result = Map<String, dynamic>.from(data);
 
-      if (response.status >= 400 || result['error'] != null) {
+      if (response.status >= 400 ||
+          result['error'] != null) {
         throw Exception(
           result['error'] ?? 'Something went wrong',
         );
@@ -146,8 +159,11 @@ class _LoginPageState extends State<LoginPage> {
 
       final refreshToken = result['refresh_token'];
 
-      if (refreshToken == null) {
-        throw Exception('Login token was not received');
+      if (refreshToken == null ||
+          refreshToken.toString().isEmpty) {
+        throw Exception(
+          'Login token was not received',
+        );
       }
 
       await supabase.auth.setSession(
@@ -164,13 +180,14 @@ class _LoginPageState extends State<LoginPage> {
     } catch (error) {
       if (!mounted) return;
 
-      String message = error.toString()
+      String message = error
+          .toString()
           .replaceFirst('Exception: ', '');
 
-      if (message.contains('FunctionException') ||
-          message.contains('404')) {
+      if (message.contains('404') ||
+          message.contains('NOT_FOUND')) {
         message =
-            'Authentication service not available. Please check the server settings.';
+            'Authentication service not found. Please check the server endpoint.';
       }
 
       showMessage(message);
@@ -230,7 +247,8 @@ class _LoginPageState extends State<LoginPage> {
             child: Form(
               key: _formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment:
+                    CrossAxisAlignment.stretch,
                 children: [
                   const Icon(
                     Icons.shopping_cart,
@@ -251,11 +269,15 @@ class _LoginPageState extends State<LoginPage> {
                   const Text(
                     'Buy • Sell • Shop Easy',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.orange),
+                    style: TextStyle(
+                      color: Colors.orange,
+                    ),
                   ),
                   const SizedBox(height: 35),
                   Text(
-                    isRegister ? 'Create Account' : 'Welcome Back',
+                    isRegister
+                        ? 'Create Account'
+                        : 'Welcome Back',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 22,
@@ -287,10 +309,12 @@ class _LoginPageState extends State<LoginPage> {
                         '',
                       );
 
-                      if (!RegExp(r'^\+?[0-9]{9,15}$')
-                          .hasMatch(phone)) {
+                      if (!RegExp(
+                        r'^\+?[0-9]{9,15}$',
+                      ).hasMatch(phone)) {
                         return 'Enter a valid phone number';
                       }
+
                       return null;
                     },
                   ),
@@ -300,9 +324,11 @@ class _LoginPageState extends State<LoginPage> {
                     controller: _passwordController,
                     password: true,
                     validator: (value) {
-                      if (value == null || value.length < 8) {
+                      if (value == null ||
+                          value.length < 8) {
                         return 'Password must be at least 8 characters';
                       }
+
                       return null;
                     },
                   ),
@@ -313,9 +339,11 @@ class _LoginPageState extends State<LoginPage> {
                       controller: _confirmController,
                       password: true,
                       validator: (value) {
-                        if (value != _passwordController.text) {
+                        if (value !=
+                            _passwordController.text) {
                           return 'Passwords do not match';
                         }
+
                         return null;
                       },
                     ),
@@ -329,7 +357,9 @@ class _LoginPageState extends State<LoginPage> {
                             'Password reset will be added next.',
                           );
                         },
-                        child: const Text('Forgot Password?'),
+                        child: const Text(
+                          'Forgot Password?',
+                        ),
                       ),
                     ),
 
@@ -391,6 +421,7 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = supabase.auth.currentUser;
+
     final name =
         user?.userMetadata?['full_name'] ?? 'User';
 
@@ -398,7 +429,9 @@ class HomePage extends StatelessWidget {
       appBar: AppBar(
         title: const Text(
           'NB MARKET',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
         ),
         actions: [
           IconButton(
@@ -432,7 +465,9 @@ class HomePage extends StatelessWidget {
             const SizedBox(height: 8),
             const Text(
               'Your account is connected.',
-              style: TextStyle(color: Colors.green),
+              style: TextStyle(
+                color: Colors.green,
+              ),
             ),
           ],
         ),
